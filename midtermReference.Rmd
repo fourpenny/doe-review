@@ -1,0 +1,552 @@
+---
+title: "DoE Midterm Reference"
+author: "Christian Clark"
+date: "10/15/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# General Utilities
+
+## Importing Data
+Packages used: Tidyverse
+
+Imports the given data as a tibble for easier manipulation.
+```{r}
+library(tidyverse)
+example_data1 = tibble(read.table(file.choose()))
+example_data1
+```
+## Replacing/manipulating values
+### In a dataframe
+Below we drop the column containing the index.
+```{r}
+example_data1 = example_data1[,-1]
+example_data1
+```
+To make it easier to create a model matrix, we will change all of the pluses and minuses in the tibble to +1 and -1. The pipe operator passes the dataframe from the first function into the second.
+
+```{r}
+example_data2 = example_data1
+example_data2[,1:4] = example_data2[,1:4] %>% mutate_all(~ replace(., . == '-', -1)) %>% mutate_all(~ replace(., . == '+', 1))
+example_data2
+```
+### In a vector
+What if we want to replace values in a vector instead?
+```{r}
+example_vec = example_data1$V2
+example_vec[example_vec == '-'] <- -1
+example_vec = replace(example_vec, example_vec == '+', 1)
+example_vec = as.numeric(example_vec)
+example_vec
+```
+## Renaming Column Names in a DataFrame
+
+```{r}
+names(example_data3)=c(LETTERS[1:4],"y1","y2","y3","y4","y5","y6")
+example_data3
+```
+
+
+## Creating and solving model matrix
+Do this one later :)
+
+# Chapter 2
+## One-Way Layout
+A single factor experiment with *k* levels.
+Below is the pulp experiment example from Chapter 2.
+
+```{r}
+reflectance_data=c(59.8, 59.8, 60.7, 61.0,
+    60.0, 60.2, 60.7, 60.8,
+    60.8, 60.4, 60.5, 60.6,
+    60.8, 59.9, 60.9, 60.5,
+    59.8, 60.0, 60.3, 60.5)
+operator = rep(LETTERS[1:4],5)
+```
+
+### Zero-Sum Contrast
+Finding the model coefficients using zero sum contrast. The coefficients need to sum to zero, just as the name suggests.
+```{r}
+zero_sum = lm(reflectance_data~operator,contrasts = list(operator=contr.sum))
+summary(zero_sum)
+```
+To get the value of the final coefficient of the model, we can use simple algebra.
+```{r}
+zero_sum_coeff = zero_sum$coefficients
+operator4 = zero_sum_coeff[2] + zero_sum_coeff[3] + zero_sum_coeff[4]
+operator4
+```
+### Finding the model coefficients using baseline contrast
+This constrast treats the first coefficient as the default value. All of the other coefficient values are differences between the means of those treatments and the baseline. This is the default when using contrasts in R.
+
+```{r}
+baseline = lm(reflectance_data~operator,contrasts = list(operator=contr.treatment))
+baseline
+```
+We can compare the performance of each of these values of the single factor with the baseline. Here, on average, the final operator would produce the highest reflectance.
+
+## Orthogonal Polynomials
+
+Data for a laser power level experiment:
+```{r}
+x=rep(c(40,50,60),c(3,3,3)) #laser power
+y=c(25.66,28,20.65,29.15,35.09,29.79,35.73,39.56,35.66) #composite strength
+```
+
+"Linear contrast"
+Linear relationship can be estimated with (given 3 points, y1, y2, and y3):
+y3 - y1 = -1y1 + 0y2 + 1y3
+
+"Quadratic Contrast"
+Quadratic relationship can be estimated with (given the same 3 points):
+y3-y2 = y2 - y1
+y3 - 2y2 + y1
+
+Orthogonal polynomials can only be used if the measured levels are equidistant (have a constant delta) and if the desired predicted effect is within the domain of the given levels. The contrasts can be used at any set of levels.
+
+Formulas for orthogonal polynomials up to degree 4 can be found on page 90 of the pdf.
+```{r}
+mid_level = 50
+delta = 10
+```
+
+```{r}
+p1=(x-mid_level)/delta
+p2=3*(((x-mid_level)/delta)^2-2/3)
+p1=p1/sqrt(2)
+p2=p2/sqrt(6)
+
+#model fitted with both linear and quadratic components
+a1=lm(y~p1+p2)
+#model fitted with only linear component
+a2=lm(y~p1)
+```
+
+You can observe how similar these two models are in this particular case using the cell below or by looking at the summaries of the models:
+```{r}
+curve(a1$coef[1]+a1$coef[2]*(x-50)/(sqrt(2)*10)+a1$coef[3]*3*(((x-50)/10)^2-2/3)/sqrt(6), from=40, to=60, ylab="y")
+curve(a2$coef[1]+a2$coef[2]*(x-50)/(sqrt(2)*10), from=40, to=60, add=T, col=2)
+points(x,y)
+```
+
+
+## Residual Analysis
+Important questions to ask about a model to determine whether it effectively describes the data:
+
+ + Have we captured all of the important effects?
+ + Are the errors independent and normally distributed?
+ + Do the errors have a constant variance?
+
+Methods of analyzing these questions using the pulp experiment from above.
+```{r}
+#In case you need the experiment data and don't want to search for it
+reflectance_data=c(59.8, 59.8, 60.7, 61.0,
+    60.0, 60.2, 60.7, 60.8,
+    60.8, 60.4, 60.5, 60.6,
+    60.8, 59.9, 60.9, 60.5,
+    59.8, 60.0, 60.3, 60.5)
+operator = rep(LETTERS[1:4],5)
+reflectance_model = lm(reflectance_data~operator)
+#Library for making nice plots
+library(ggplot2)
+```
+### Plotting residuals vs. predictions
+Note, these could look better but I am prioritizing for speed on this midterm rather than aesthetics :)
+
+```{r}
+reflectance_pred = reflectance_model$fitted.values
+reflectance_res = reflectance_model$residuals
+```
+
+```{r}
+reflectance_pred_res <- tibble(data.frame(reflectance_res, reflectance_pred))
+a <- ggplot(reflectance_pred_res, aes(x=reflectance_pred, y=reflectance_res)) + geom_point()
+a
+```
+### Plotting residuals vs. changes in the experimental factor
+
+```{r}
+operator_res <- data.frame(operator, reflectance_res)
+b <- ggplot(operator_res, aes(x=operator, y=reflectance_res)) + geom_point()
+b
+```
+
+### Plotting residuals vs. time
+
+Example from steel girder experiment on page 88. Includes 9 separate blocks.
+
+```{r}
+#Data entry
+girder_data = tibble(read.table(file.choose(),header=TRUE))
+girder_strength = c(girder_data$Aarau, girder_data$Karlsruhe, girder_data$Lehigh, girder_data$Cardiff)
+girder_type = rep(c('Aarau','Karlsruhe','Lehigh','Cardiff'), c(9,9,9,9))
+girder_block=rep(paste("S",1:9,sep=""),4)
+
+```
+
+Plotting residuals vs. time (blocking variable)
+
+```{r}
+girder_pr = tibble(girder_model$fitted.values, girder_model$residuals, girder_block, girder_type)
+names(girder_pr) = c('predictions', 'residuals', 'block', 'type')
+
+c <- ggplot(girder_pr, aes(x=block, y=residuals)) + geom_point()
+c
+```
+In this example, all of the blocks are fairly centered around 0, which is ideal.
+
+### Plotting residuals vs. treatment group
+
+```{r}
+d <- ggplot(girder_pr, aes(x=type, y=residuals)) + geom_point()
+d
+```
+Another option (box and whisker plot):
+
+```{r}
+e <- ggplot(girder_pr, aes(x=type, y=residuals,fill=type)) + geom_boxplot()
+e
+```
+
+### Normal plot of the residuals
+```{r}
+qqnorm(girder_pr$residuals)
+qqline(girder_pr$residuals)
+```
+These residuals don't vary very normally at all! There is likely some transformation of the response needed to capture the full effects of this experiment with a linear model.
+
+# Chapter 3
+## Blocking
+### Blocks of Size 2 (Paired Comparison Design)
+How to do paired design?
+Use the differences between the pair of levels in each block for comparison rather than all levels as a whole.
+
+Advantages of paired designs:
+ + Can ensure the same quality in both samples in a block
+Disadvantages of paired designs:
+ + Have fewer degrees of freedom than unblocked designs with controlled samples
+ 
+Sewage treatment experiment example from book is below.
+
+Data Entry:
+```{r}
+msi=c(.39,.84,1.76,3.35,4.69,7.7,10.52,10.92)
+sib=c(.36,1.35,2.56,3.92,5.35,8.33,10.7,10.91)
+cl_content = c(msi,sib)
+sewage_method =rep(c("MSI","SIB"),c(8,8))
+```
+
+Analysis of treating the experiment as unpaired:
+```{r}
+sewage_mean=sapply(split(cl_content,sewage_method),mean)
+sewage_var=sapply(split(cl_content,sewage_method),var)
+t_unpair=(sewage_mean[1]-sewage_mean[2])/sqrt(sewage_var[1]/8+sewage_var[2]/8)
+unpaired_p_value = 2*(1-pt(abs(t_unpair),14))
+unpaired_p_value
+```
+
+Analysis of paired treatment
+```{r}
+diff = sib-msi
+#See page 114 in pdf for formula for paired t-statistic
+paired_t_stat = sqrt(8)*mean(diff)/sd(diff)
+paired_p_val = 2*(1-pt(paired_t_stat,7))
+paired_p_val
+```
+This confirms that the treatment has a significant impact. We could then look back at the experimental results (differences between treatments) to make conclusions about the experiment.
+
+### Randomized Block Designs
+Used to compare many (k) treatments for an experiment with a single factor using b blocks of size k.
+
+Units within a block should be more homogeneous than units between blocks. View residual analysis above (steel girder experiment) or view page 88 in the textbook pdf.
+
+## Two-Way Layout
+Used to measure the effects of two different factors with fixed levels. (Example in 3.3, page 120 is three types of coating and 2 types of mechanism.)
+
+## Latin Squares
+Use these in a situation where there are 2 blocking variables (ex. day of the experiment and position of a piece of cloth in the testing machine) and a single experimental factor.
+
+Fabric wear experiment example from the textbook is below.
+```{r}
+#Table 3.17 ,'V2','V3','V4'), 'Position', 'Material', 'Wear'))
+wear_data = tibble(read.table(file.choose()))
+wear_data = wear_data[-1,]
+wear_data = rename(wear_data, Application = V1)
+wear_data = rename(wear_data, Position = V2)
+wear_data = rename(wear_data, Material = V3)
+wear_data = rename(wear_data, Wear = V4)
+wear_data
+```
+```{r}
+latin_square=lm(Wear~factor(Application)+factor(Position)+factor(Material), data=wear_data)
+anova(latin_square)
+```
+```{r}
+summary(latin_square)
+```
+### How to create a Latin Square/Greco-Latin Square Design
+View page 175 of textbook for reference. Enter as vectors that make sense according to the order of the y values.
+
+## Transformation of the Response
+*MENTIONED TO BE IMPORTANT IN CLASS*
+Generally these are power transformations but the natural log of the response is also sometimes used. (Lambda = 0)
+
+See page 132 in the text for a common list.
+
+### Why choose to transform the response?
++ If the data can be modeled by a simpler model (ex. linear with fewer or no interaction effects)
++ The transformation results in more normally varying residuals.
+
+Explainability of a model is still important. 
+
+For example, the reciprocal of survival time (lambda = -1) is death rate.
+
+### Code for Box-Cox Transformation
+Data entry:
+```{r}
+library(MASS)
+yarn_data <- c(674, 370, 292,
+               338, 266, 210,
+               170, 118, 90,
+               1414, 1198, 634,
+               1022, 620, 438,
+               442, 332, 220,
+               3636, 3184, 2000,
+               1568, 1070, 566,
+               1140, 884, 360)
+specimen_length <- rep(c(250, 300, 350), c(9,9,9))
+amplitude <- rep(rep(c(8,9,10), c(3,3,3)), 3)
+load <- rep(c(40, 45, 50), 9)
+interaction_factors.specimen_amplitude <- c(factor(specimen_length):factor(amplitude))
+interaction_factors.specimen_load <-c(factor(specimen_length):factor(load))
+interaction_factors.amplitude_load <-c(factor(amplitude):factor(load))
+```
+
+Code to use the Box-Cox transformation to find the best value of lambda using the log likelihood.
+```{r}
+yarn_boxcox = boxcox(yarn_data ~ factor(specimen_length) + factor(amplitude) + factor(load) + interaction_factors.amplitude_load + interaction_factors.specimen_amplitude + interaction_factors.specimen_load, plotit = TRUE)
+```
+```{r}
+best_lambda = yarn_boxcox$x[which.max(yarn_boxcox$y)]
+best_lambda
+```
+In this case, it is likely still ideal to try one of the more interpretable transformations in the textbook rather than raising the response to the "0.62" power.
+
+```{r}
+#Need to create a normal distribution to use as the y-axis of the qqplot
+norm_dist <- rnorm(100)
+
+#Log transformation of the response
+yarn_log = lm(log(yarn_data) ~ factor(specimen_length) + factor(amplitude) + factor(load) + interaction_factors.amplitude_load + interaction_factors.specimen_amplitude + interaction_factors.specimen_load)
+qqplot(norm_dist, yarn_log$residuals, xlab="Theoretical Quantiles", ylab="Model Residuals")
+qqline(yarn_log$residuals)
+```
+You can use an ANOVA table for the model created with the transformed response to see if there are any insignificant variables. You can try removing them to see if the residuals vary more normally. For example, in this model neither the interaction between the amplitude and load nor the specimen and load appear significant.
+```{r}
+anova(yarn_log)
+```
+Let's try removing them and see what the residuals of the model look like.
+```{r}
+yarn_log2 <- lm(log(yarn_data) ~ factor(specimen_length) + factor(amplitude) + factor(load) + interaction_factors.specimen_amplitude)
+anova(yarn_log2)
+```
+```{r}
+qqplot(norm_dist, yarn_log2$residuals, xlab="Theoretical Quantiles", ylab="Model Residuals")
+qqline(yarn_log2$residuals)
+```
+Example of another type of transformation of the response (square root). You can try a process similar to above.
+
+```{r}
+yarn_trans1= lm(yarn_data^(1/2) ~ factor(specimen_length) + factor(amplitude) + factor(load) + interaction_factors.amplitude_load + interaction_factors.specimen_amplitude + interaction_factors.specimen_load)
+qqplot(norm_dist, yarn_trans1$residuals, xlab="Theoretical Quantiles", ylab="Model Residuals")
+qqline(yarn_trans1$residuals)
+```
+
+# Chapter 4
+## Full Factorial Experiments at 2 Levels
+
+Notes on their advantages over "one-at-a-time" experiments:
+
+1. OAAT requires more runs for the same precision in effect estimation.
+2. OAAT cannot estimate some interactions.
+3. The conclusions from its analysis are not general.
+4. OAAT can miss optimal settings of factors.
+
+### Expitaxial Layer Growth Experiment (example from textbook)
+```{r}
+#Table 4.1 - Adapted Layer Table
+layer_data = tibble(read.table(file.choose()))
+layer_data = layer_data[2:11]
+names(layer_data)=c(LETTERS[1:4],"y1","y2","y3","y4","y5","y6")
+
+A=rep(rep(c(-1,1),c(8,8)),6)
+B=rep(rep(rep(c(-1,1),c(4,4)),2),6)
+C=rep(rep(rep(c(-1,1),c(2,2)),4),6)
+D=rep(rep(c(1,-1),8),6)
+layer_response=as.numeric(c(layer_data$y1,layer_data$y2,layer_data$y3,layer_data$y4,layer_data$y5,layer_data$y6))
+```
+
+## Main Effect Plots
+Plot the mean of the effects at the low and high level of a given factor (the main effects).
+```{r}
+library(ggplot2)
+yA=sapply(split(layer_response,A),mean)
+yB=sapply(split(layer_response,B),mean)
+yC=sapply(split(layer_response,C),mean)
+yD=sapply(split(layer_response,D),mean)
+```
+
+```{r}
+#Main effect plot for yA
+yA = tibble(yA)
+yA['level'] = c(-1, 1)
+ggplot(data = yA, aes(x=level,y=yA)) + geom_point() + geom_line()
+```
+```{r}
+#Main effect plot for yB
+yB = tibble(yB)
+yB['level'] = c(-1, 1)
+ggplot(data = yB, aes(x=level,y=yB)) + geom_point() + geom_line()
+```
+Ect.
+
+## Interaction Effect Plots
+Remember, the interaction effect of A and B can be measured by looking at the effect of A given B at each level or B given A at each level.
+
+*I want to be able to do this in ggplot eventually!*
+
+```{r}
+par(mfrow=c(3,2))
+interaction.plot(A,B,y)
+interaction.plot(A,C,y)
+interaction.plot(A,D,y)
+interaction.plot(B,C,y)
+interaction.plot(B,D,y)
+interaction.plot(C,D,y)
+```
+
+## Normal and Half-Normal Plots
+We expect the observed effects of the factors to vary normally around a mean of 0. Those that deviate from this line are significant. We can see if there are any factors that are significant in this way by using a normal plot (plotting their effects against the CDF of a normal distribution).
+```{r}
+layer_model = lm(layer_response~(A+B+C+D)^4)
+layer_effects = 2*layer_model$coef[-1]
+```
+### Normal Plot
+```{r}
+qqnorm(layer_effects)
+```
+```{r}
+#Manual method, could adapt to ggplot eventually
+I=length(layer_effects)
+u=qnorm((1:I-.5)/I)
+seff=sort(layer_effects)
+plot(u,seff,type="n",xlab="normal quantiles",ylab="effects", main="normal plot")
+text(u,seff,names(seff))
+qqline(eff)
+```
+### Half-Normal Plot
+The half normal plot instead plots absolute values of the effects which makes them easier to notice, as they all fall above the line.
+```{r}
+library(unrepx)
+hnplot(layer_effects,horiz = FALSE,a=.5, ID=0.15)
+```
+## Lenth's Method
+A method that can be used to determine significance of factors for unreplicated experiments. Since we are not able to determine F/T statistics with so few degrees of freedom, we instead can use an estimate called the "Pseudo-Standard Error" (PSE). This is an approximation of the standard deviation of the experimental factors along a normal distribution that is tested against for significance of a factor.
+
+This can be used to analyze the location and dispersion effects (as shown below) in addition to visual methods such as a half-normal plot.
+
+This uses the same expitaxial growth layer experiment as above but with all of the original results included.
+```{r}
+#Original Layer Table 4.10
+original_layer_data = tibble(read.table(file.choose()))
+orig_layer_response = as.numeric(c(original_layer_data$V5, original_layer_data$V6, original_layer_data$V7, original_layer_data$V8, original_layer_data$V9, original_layer_data$V10))
+
+layer_run=rep(1:16,6)
+layer_ybar=sapply(split(orig_layer_response,layer_run),mean)
+layer_s2=sapply(split(orig_layer_response,layer_run),var)
+layer_A=rep(c(-1,1),c(8,8))
+layer_B=rep(rep(c(-1,1),c(4,4)),2)
+layer_C=rep(rep(c(-1,1),c(2,2)),4)
+layer_D=rep(c(1,-1),8)
+```
+
+Fitting a model for the experiment.
+```{r}
+orig_layer_model=lm(layer_ybar~(layer_A+layer_B+layer_C+layer_D)^4)
+
+#-1 removes the intercept
+layer_effybar=2*orig_layer_model$coef[-1]
+```
+
+```{r}
+#"Initial standard error" (s0) calculated below
+s0=1.5*median(abs(layer_effybar))
+#"Pseudo standard error" calculated below
+pse=1.5*median(abs(layer_effybar[abs(layer_effybar)<2.5*s0]))
+pseudo_t_stats = abs(layer_effybar)/pse
+pseudo_t_stats
+```
+To determine if any of these pseudo t-statistics are significant or not, check Appendix H in the textbook. (Page 707 in the pdf.) Honestly, you'll probably just use one of the R methods below instead on the exam.
+
+You can also use the same method for the natural log of the dispersion (variance).
+
+## Location and Dispersion Analysis
+"Location" is a fancy word for the mean of the experimental response, while "dispersion" is a fancy word for its variance. 
+We will use the same data from the expitaxial growth layer experiment above as an example.
+
+### Nominal-the-Best Problems
+Reduce dispersion first, then adjust the location to be near where you want it to be. 
+
+Why? You're aiming for a specific value and want to get as close to possible as much of the time as possible.
+
+In addition to a factor that reduces dispersion, you need to find an "adjustment factor" that gets the mean closer to your nominal value.
+
+The example above (epitaxial growth layer experiment) is a nominal the best problem with a target of 14.5.
+
+For adjusting the dispersion, we use the log of the experimental variance rather than the experimental variance (which has a chi-squared distribution).
+
+```{r}
+library(unrepx)
+layer_s2_model=lm(log(layer_s2)~(layer_A+layer_B+layer_C+layer_D)^4)
+layer_effs2=2*layer_s2_model$coef[-1]
+
+hnplot(layer_effs2,horiz = FALSE, ID=2,a=.5, method='Lenth')
+```
+In this case, we can see that factor A is significant- it's way above the line representing a normal distribution! To analyze its effect, we will ignore the impact of all others on the log of the variance.
+
+```{r}
+a_var=lm(log(layer_s2)~layer_A)
+summary(a_var)
+```
+A is positively correlated with the log of the variance. We would want to set it to a negative level in this case. To find the overall expected variance, simply use the ideal setting for the factor impacting variance (- level of A) and use an exponential function raised to the expected value of the log of the variance based on the regression equation found above.
+
+```{r}
+layer_exp_var = exp(a_var$coefficients[1] - a_var$coefficients[2])
+layer_exp_var
+```
+Now we'll do something similar with the mean to find an adjustment factor.
+
+```{r}
+hnplot(layer_effybar, horiz=FALSE, a=.5, method='Lenth', ID=0.6)
+```
+In this case, we can see that D is having an unexpectedly large effect on the mean. It's not the same factor that we used to reduce variance, so we can use it as an adjustment factor.
+
+### Other types of problems
+Adjust location first, then reduce dispersion. Do similar process as above with half-normal plots or Lenth's method.
+
+# Chapter 5
+## Fractional Factorial Experiments at 2 Levels
+### Determining Defining Contrast Subgroup
+### Determining Aliases
+## Optimal Design Approach
+## Fold-Over Technique
+
+# Chapter 7
+## Definitive Screening Design
+
+# Chapter 8
+## Orthogonal Arrays
