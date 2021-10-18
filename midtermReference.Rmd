@@ -540,13 +540,131 @@ Adjust location first, then reduce dispersion. Do similar process as above with 
 
 # Chapter 5
 ## Fractional Factorial Experiments at 2 Levels
-### Determining Defining Contrast Subgroup
+A 2^k-p design uses 2^p runs to test the effects of k factors with 2 levels. Because we do not have enough degrees of freedom from the experiment to capture all of the main and multiple factor interaction effects, some of these effects end up aliased to each other (you cannot tell which effect the results are tied to based on the results of the experiment).
+
+### How do we choose the best fraction and best aliases to use for a fractional factorial experiment?
+To determine what fraction you should use for the experiment (1/2, 1/4, ect.), you need to determine how many experiments are required to determine the main/interactions effects you want to analyze.
+
+At least k + 1 experiments are required to capture the main effects (ex. with 7 factors you need at least 2^3, or 8, experiments). You can find the number of 2 factor interactions (or any interactions for that matter!) using the combinations formula- n is the number of factors while r is the level of the interaction effect.
+
+C(n, r) = n! / (n-r)! * r!
+
+### The two most important criteria to consider are...
++ Maximum resolution criterion
+    + The resolution of a design is its the length of the shortest word in its defining contrast subgroup.
+    + Designs with higher resolutions are better (and have less aliasing of lower order interaction/main effects)
++ Minimum aberration criterion
+    + Aberration is determined by the shortest word in the word-length pattern of 2 designs
+    + Having fewer short words in the word length pattern is better (these are more likely to cause aliasing of main and low order interaction effects)
+
+### "Clear" and "Strongly Clear" Designs
+Clear effects are not aliased with any main or two-factor interaction effects. (Ex. All main effects of resolution IV designs are clear.)
+
+Strongly clear effects are also not aliased with three-factor interaction effects. (Ex. All main effects of resolution V designs are strongly clear)
+
+### Defining Relation/Contrast Subgroup
+When the factors in a given experiment multiplied by each other end up in a column of +'s, the interactions of these factors is called one of the experiment's defining words. All of these words together make up an experiment's defining contrast subgroup.
+
+You can use these to find the aliases for all of the factors in a given experiment (although it might take a while by hand).
+
+Here's some helper code to find the defining contrast subgroup given the experiment's generators. (It actually takes the known defining relations from these generators, but whatever.)
+
+```{r}
+library(stringr)
+
+helper <- function(v) {
+	str_trim(gsub("([A-Z1-9-])\\1", "", paste(str_sort(unlist(str_split(paste(v, ""), ""))), collapse = "")))
+}
+
+DCS <- function(gen) {
+	words <- c()
+	l <- length(gen)
+	for (i in 1:l) {
+		for (j in combn(gen, i, simplify = F)) {
+			words <- c(words, helper(j))
+		}
+	}
+	words[order(nchar(words), words)]
+}
+
+DCS(c("1235", "1246", "1347", "2348", "12349"))
+```
+
+### Word Length Pattern
+Here's a function that can help with finding the word length pattern (number of defining words of each given length starting with length 3) for an experiment from the FrF2 package.
+```{r}
+library(FrF2)
+experiment = FrF2(nruns = 16, nfactors=9, generators=c('ABC', 'ABD', 'ACD', 'BCD', 'ABCD'))
+GWLP(experiment)
+```
 ### Determining Aliases
+Function from FrF2 for determining aliases. (Can also be done by hand, but who has time for that?)
+
+```{r}
+aliasprint(experiment)
+#aliases is also another useful similar function
+```
 ## Optimal Design Approach
+Both the approaches used for creating optimal designs are used to create the best possible follow up designs for an experiment.
+
+### How many runs to choose?
+The number needed to dealias the effects you want to observe more clearly (that would add enough degrees of freedom allowing you estimate them). For example, if you want to observe an additional 2 factor interaction effect and a 3 factor interaction effect, you would add 2 experiments.
+
+If you needed to dealias all of the 2 factor interaction effects for example, you could use the combinations formula to find the total number of experiments to dealias them. (But it would be better to figure out which are likely to be significant first based on their effects on location and dispersion.)
+
+### Types of optimal designs
+D-optimal design: Tries to maximize the determinant of the model matrix when augmenting the design.
+This model matrix is selected only from the factors shown to be significant in the original design! (May be used for the model matrix for both estimating the dispersion or location effects!)
+
+Ds-optimal design: Tries to maximize the determinant of the matrix representing a subset of the factors of the design (ex. only 2 of the 5 given effects).
+
+### Code for generating optimal designs
+
+```{r}
+library(AlgDesign)
+experiment = FrF2(nruns = 16, nfactors=9, generators=c('ABC', 'ABD', 'ACD', 'BCD', 'ABCD'))
+block <- rep("orig", 16)
+experiment2 = experiment %>% add_column(block)
+candidates = gen.factorial(levels = 2, nVar=9, varNames = c("A","B","C","D","E","F","G","H","J"))
+candidates = tibble(candidates, block="cand")
+candidates = candidates %>% mutate("A" = as.factor(A), "B" = as.factor(B), "C" = as.factor(C), "D" = as.factor(D), 
+                                   "E" = as.factor(E), "F" = as.factor(F), "G" = as.factor(G), "H" = as.factor(H), 
+                                   "J" = as.factor(J))
+experiment2 = add_row(experiment2, candidates)
+opt=optFederov(~., data = experiment2, nTrials = 28, criterion = "D",augment = TRUE, rows=1:16)
+design1 = opt$design
+
+design1
+```
+
 ## Fold-Over Technique
+Not needed for the exam, but still valuable to know...
+
+To double the number of designs for follow-up experiments, you can use the fold over technique. Essentially you create the follow up experimental design (augmented design) by switching all the signs (using "-" versions of the columns).
+
+Usually used to help clear up the main effects of an experiment if they are aliased with 2 factor interactions.
 
 # Chapter 7
 ## Definitive Screening Design
+Used to determine which factors are actually important when given a large number of them (ex. 100) using a small number of experiments.
+
+Since it has 3 levels (-1,0,1), it can be used to estimate 3 level factors or 2 level factors with quadratic effects.
+```{r}
+library(daewr)
+DefScreen(10)
+```
 
 # Chapter 8
 ## Orthogonal Arrays
+A type of non-regular design that will allow you to effectively mix 2 and 3 level factors with an optimal number of runs. Also helpful because they allow for designs in between fractional factorial sizes.
+
+Uses N runs for m factors at "t" strength - for t columns in the array, all combos of factors will appear equally often. (If not given, assume strength 2.) s represents the number of levels for factor m.
+
+$$ OA(N, s^{m_1}_1, s^{m_2}_2, ..., s^{m_\gamma}_\gamma)$$
+### How many experiments are needed for an OA design?
+If we assume the experiment needs to at least capture the main effects...
+N (the number of runs) needs to be divisible by the LCM of the products of $$s^{k_i}_i$$!
+
+For example if you have one factor with 2 levels and 7 factors with 3 levels...
+$$OA(N, 2^1, 3^7)$$
+You would need to find the least common multiple of 2^k1 and 3^k2 where k1 + k2 = t. Both must be < or = to m (the number of factors at that level), so k1 must equal 1 or 0 in this case while k2 can be either 2 - 1 = 1 or 2 - 0 = 2. This means we must find the LCM of 2^1 * 3^1 = 6 and 3^2 = 9. The least common multiple of 9 and 6 is 18, so the OA must have a multiple of 18 runs (ex. 18, 36, 54...) that is sufficient to capture the main effects of all of the factors.
